@@ -108,7 +108,8 @@ def _add_slurm_args(parser: argparse.ArgumentParser) -> None:
     slurm_grp.add_argument(
         "--mem",
         default=None,
-        help="SLURM memory allocation override (defaults to site.json sbatch.mem).",
+        help="SLURM memory allocation override (defaults to site.json sbatch.mem); 'none' writes no --mem line "
+        "(MN5 refuses --mem and gives memory per core).",
     )
     slurm_grp.add_argument(
         "--time",
@@ -1232,7 +1233,7 @@ def _cmd_site_init(args: argparse.Namespace) -> int:
             f"SLURM defaults: partition={cfg.partition or '<none>'}"
             + (f" qos={cfg.qos}" if cfg.qos else "")
             + f" account={cfg.account or '<none>'} "
-            f"gres={cfg.gres or '<none>'} cpus={cfg.cpus_per_task} mem={cfg.mem} max_time={cfg.max_time}"
+            f"gres={cfg.gres or '<none>'} cpus={cfg.cpus_per_task} mem={cfg.mem or '<none>'} max_time={cfg.max_time}"
         )
     print(f"Run root:       {cfg.run_root}")
     return 0
@@ -1259,7 +1260,7 @@ def _cmd_site_show(args: argparse.Namespace) -> int:
             f"SLURM defaults: partition={cfg.partition or '<none>'}"
             + (f" qos={cfg.qos}" if cfg.qos else "")
             + f" account={cfg.account or '<none>'} "
-            f"gres={cfg.gres or '<none>'} cpus={cfg.cpus_per_task} mem={cfg.mem} max_time={cfg.max_time}"
+            f"gres={cfg.gres or '<none>'} cpus={cfg.cpus_per_task} mem={cfg.mem or '<none>'} max_time={cfg.max_time}"
         )
     print(f"Run root:       {cfg.run_root}")
     return 0

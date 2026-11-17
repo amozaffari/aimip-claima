@@ -5,7 +5,7 @@ changes are opt-in through `site.json`: on every other site `aimip` behaves exac
 
 ## Why MN5 needed changes
 
-MN5 differs from the clusters `aimip` was written for (Levante, generic Slurm) in two ways.
+MN5 differs from the clusters `aimip` was written for (Levante, generic Slurm) in three ways.
 
 1. **Group directories are writable by the whole group.** Every user directory sits in a root-owned directory of
    its Unix group that all members can write, without a sticky bit:
@@ -25,6 +25,11 @@ MN5 differs from the clusters `aimip` was written for (Levante, generic Slurm) i
    `acc_debug`: up to 2 h, one job at a time) and no partition; the QOS selects the accelerated partition. `aimip`
    required a partition in every job script and could not write a `--qos` line.
 
+3. **Jobs may not ask for memory.** MN5 gives memory per core (8 GB per core on the accelerated nodes, so 160 GB
+   for 20 cores) and refuses any job that sets `--mem`:
+   `sbatch: error: You cannot submit a job requesting memory parameters, memory is automatically set for each asked cpu`.
+   `aimip` wrote `#SBATCH --mem=64G` into every job script.
+
 ## The modifications
 
 | # | change | files |
@@ -34,8 +39,9 @@ MN5 differs from the clusters `aimip` was written for (Levante, generic Slurm) i
 | 3 | The partition may be empty (or `"none"`) when a QOS is given; then no `#SBATCH --partition` line is written. Without a QOS a partition is still required. | `src/aimip/site_config.py`, `src/aimip/runner.py` |
 | 4 | The submit gates accept `#SBATCH --qos=`: the Python gate used by native installs and the shell gate in the container wrapper, which must stay identical (the test suite checks this). | `src/aimip/submit.py` (`ALLOWED_SBATCH_KEYS`), `container/aimip-wrapper.in`, `tests/wrapper/gate_cases.json` |
 | 5 | The QOS is part of the plan a person approves: it is in the plan's resources and digest and on the plan card. It is added only when set, so digests on sites without a QOS are unchanged. | `src/aimip/services/core.py`, `src/aimip/services/cards.py` |
-| 6 | Preset `mn5`: no partition, QOS `acc_ehpc`, one GPU with 20 cores (MN5 asks for 20 cores per GPU), run root and trusted group directories for BSC Earth Sciences (`bsc32`). | `install/presets/mn5.json`, `SiteConfig.preset("mn5")`, `aimip site init --preset mn5` |
-| 7 | Tests for all of the above. | `tests/test_mn5.py` |
+| 6 | Preset `mn5`: no partition, QOS `acc_ehpc`, no `mem`, one GPU with 20 cores (MN5 asks for 20 cores per GPU), run root and trusted group directories for BSC Earth Sciences (`bsc32`). | `install/presets/mn5.json`, `SiteConfig.preset("mn5")`, `aimip site init --preset mn5` |
+| 7 | `mem` may be empty (or `"none"`, also `--mem none`): then no `#SBATCH --mem` line is written. The `mn5` preset has no `mem`. | `src/aimip/site_config.py`, `src/aimip/runner.py`, `src/aimip/cli.py` |
+| 8 | Tests for all of the above. | `tests/test_mn5.py` |
 
 Not changed:
 
@@ -61,7 +67,7 @@ nohup setsid bash install/install-native.sh --prefix /gpfs/projects/bsc32/$USER/
 
 For another group, edit `run_root` and `trusted_group_parents` in `<prefix>/site.json` (for example
 `/gpfs/scratch/ehpc819`). An install made with `--site generic-slurm` can be switched by adding to its `site.json`:
-`"qos": "acc_ehpc"` and `"partition": ""` in `sbatch`, `"cpus_per_task": 20`, and
+`"qos": "acc_ehpc"`, `"partition": ""` and `"mem": ""` in `sbatch`, `"cpus_per_task": 20`, and
 `"trusted_group_parents": ["/gpfs/scratch/bsc32", "/gpfs/projects/bsc32"]`.
 
 ## Running
@@ -72,6 +78,5 @@ For another group, edit `run_root` and `trusted_group_parents` in `<prefix>/site
 
 ## Still to check on the first MN5 job
 
-- Whether MN5 accepts `#SBATCH --mem=64G`; earth2's MN5 jobs never set `--mem`.
 - Whether a one-GPU request with 20 cores is accepted, or MN5 wants whole nodes (`--gres=gpu:4`, 80 cores).
 - `--with-emu` (DLESyM, ArchesClimate-SSP) compiles a CUDA kernel, which needs a batch job; it is not installed yet.

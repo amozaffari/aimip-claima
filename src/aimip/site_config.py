@@ -90,6 +90,8 @@ class SiteConfig:
     account: str = "CHANGE_ME"
     gres: str = "gpu:a100_80:1"
     cpus_per_task: int = 32
+    # Empty (or "none" in site.json/CLI): no `--mem` line. MN5 refuses jobs that set --mem; it gives memory per
+    # core (8 GB per core on ACC nodes), so --cpus-per-task sets the memory there.
     mem: str = "64G"
     max_time: str = "12:00:00"
     run_root: str = "/scratch/${U1}/${USER}/aimip-runs"
@@ -147,7 +149,8 @@ class SiteConfig:
             validate_int_range(
                 self.cpus_per_task, "site cpus_per_task", min_value=1, max_value=256
             )
-            validate_slurm_mem(self.mem)
+            if self.mem:  # empty: no --mem line (MN5)
+                validate_slurm_mem(self.mem)
             validate_slurm_time(self.max_time)
         else:
             if self.partition and self.partition != "CHANGE_ME":
@@ -159,7 +162,8 @@ class SiteConfig:
             validate_int_range(
                 self.cpus_per_task, "site cpus_per_task", min_value=1, max_value=256
             )
-            validate_slurm_mem(self.mem)
+            if self.mem:  # empty: no --mem line (MN5)
+                validate_slurm_mem(self.mem)
             validate_slurm_time(self.max_time)
 
         for bind_path in self.extra_ro_binds:
@@ -223,7 +227,7 @@ class SiteConfig:
                 account="CHANGE_ME",
                 gres="gpu:1",
                 cpus_per_task=20,
-                mem="64G",
+                mem="",  # MN5 refuses --mem: memory comes with the cores (8 GB each, 160 GB for 20)
                 max_time="12:00:00",
                 run_root="${HOME}/aimip-runs",
                 extra_ro_binds=(),
@@ -327,6 +331,7 @@ class SiteConfig:
             "cpus_per_task", "cpus_per_task", "cpus", default=def_cpus
         )
         mem = str(_pick("mem", "mem", default=def_mem))
+        mem = "" if mem.strip().lower() == "none" else mem  # no --mem line (MN5 refuses it)
         max_time = str(
             _pick(
                 "max_time",
@@ -474,7 +479,7 @@ def init_site_config(
         account=norm_account if norm_account is not None else base.account,
         gres=norm_gres if norm_gres is not None else base.gres,
         cpus_per_task=cpus_per_task if cpus_per_task is not None else base.cpus_per_task,
-        mem=mem if mem is not None else base.mem,
+        mem=(("" if mem.strip().lower() == "none" else mem.strip()) if mem is not None else base.mem),
         max_time=max_time if max_time is not None else base.max_time,
         run_root=run_root if run_root is not None else base.run_root,
         extra_ro_binds=(

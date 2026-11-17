@@ -183,7 +183,8 @@ class SlurmOptions:
             validate_int_range(
                 self.cpus_per_task, "SLURM --cpus-per-task", min_value=1, max_value=256
             )
-            validate_slurm_mem(self.mem)
+            if self.mem:  # empty: no --mem line (MN5 refuses --mem; memory comes per core)
+                validate_slurm_mem(self.mem)
 
         if self.time is not None:
             validate_slurm_time(self.time)
@@ -225,7 +226,7 @@ class SlurmOptions:
             cpus_per_task=(
                 cpus_per_task if cpus_per_task is not None else site.cpus_per_task
             ),
-            mem=mem if mem is not None else site.mem,
+            mem=(("" if mem.strip().lower() == "none" else mem.strip()) if mem is not None else site.mem),
             time=time,
             job_name=job_name,
             scheduler=site.scheduler,
@@ -631,7 +632,9 @@ def render_sbatch_script(
         # --cpus-per-task counts physical cores: without the hint Slurm on SMT nodes (Levante: 128 cores, 256
         # threads) hands out half as many cores with two threads each. Harmless where there is no SMT.
         lines.append("#SBATCH --hint=nomultithread")
-        lines.append(f"#SBATCH --mem={opts.mem}")
+        if opts.mem:
+            # MN5 refuses any job that sets --mem (memory is given per core); its site.json has mem "" -> no line
+            lines.append(f"#SBATCH --mem={opts.mem}")
         lines.append(f"#SBATCH --time={walltime}")
         lines.append(f"#SBATCH --output={validated_out}/slurm-%j.out")
         lines.append(f"#SBATCH --error={validated_out}/slurm-%j.err")

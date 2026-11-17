@@ -33,7 +33,7 @@ def _write_site(path: pathlib.Path, **overrides: Any) -> pathlib.Path:
             "account": "ehpc819",
             "gres": "gpu:1",
             "cpus_per_task": 20,
-            "mem": "64G",
+            "mem": "",
             "max_time": "12:00:00",
         },
         "run_root": str(path.parent / "runs"),
@@ -96,6 +96,7 @@ def test_trusted_group_parents_entries_are_validated(tmp_path: pathlib.Path, bad
 def test_mn5_preset_and_site_init(tmp_path: pathlib.Path) -> None:
     preset = SiteConfig.preset("mn5")
     assert preset.partition == "" and preset.qos == "acc_ehpc" and preset.cpus_per_task == 20
+    assert preset.mem == ""  # MN5 refuses --mem
     target, cfg = init_site_config(
         preset="mn5",
         out_path=str(tmp_path / "site.json"),
@@ -119,6 +120,20 @@ def test_install_preset_mn5_parses() -> None:
 
 
 # ---- job.sbatch: --qos line, no --partition line
+
+
+def test_mem_none_means_no_mem(tmp_path: pathlib.Path) -> None:
+    site_path = _write_site(tmp_path / "site.json")
+    raw = json.loads(site_path.read_text())
+    raw["sbatch"]["mem"] = "none"
+    site_path.write_text(json.dumps(raw))
+    cfg = load_site_config(str(site_path))
+    assert cfg.mem == ""
+    assert SlurmOptions.from_site(cfg).mem == ""
+    assert SlurmOptions.from_site(cfg, mem="32G").mem == "32G"
+    assert SlurmOptions.from_site(SiteConfig.preset("levante"), account="a", mem="none").mem == ""
+    with pytest.raises(ValidationError):
+        SlurmOptions.from_site(cfg, mem="lots")
 
 
 def test_slurm_options_need_partition_or_qos() -> None:
@@ -159,6 +174,7 @@ def test_rendered_script_has_qos_and_passes_both_gates(
     )
     assert "#SBATCH --qos=acc_ehpc" in script
     assert "--partition" not in script
+    assert "--mem" not in script  # MN5: "You cannot submit a job requesting memory parameters"
     assert "#SBATCH --account=ehpc819" in script
     job = run_dir / "job.sbatch"
     job.write_text(script, encoding="utf-8")
@@ -168,7 +184,7 @@ def test_rendered_script_has_qos_and_passes_both_gates(
 def test_rendered_script_without_qos_is_unchanged(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     site_path = _write_site(tmp_path / "site.json")
     raw = json.loads(site_path.read_text())
-    raw["sbatch"].update({"partition": "gpu", "qos": ""})
+    raw["sbatch"].update({"partition": "gpu", "qos": "", "mem": "64G"})
     site_path.write_text(json.dumps(raw))
     monkeypatch.setenv("AIMIP_SITE_CONFIG", str(site_path))
     run_dir = tmp_path / "runs" / "plain"
@@ -184,6 +200,7 @@ def test_rendered_script_without_qos_is_unchanged(tmp_path: pathlib.Path, monkey
     )
     lines = script.splitlines()
     assert lines[2:4] == ["#SBATCH --job-name=aimip-ace2-era5", "#SBATCH --partition=gpu"]
+    assert "#SBATCH --mem=64G" in lines
     assert "--qos" not in script
 
 

@@ -1,5 +1,5 @@
 {"name": "mn5", "scheduler": "slurm",
- "sbatch": {"partition": "", "qos": "acc_ehpc", "account": "CHANGE_ME", "gres": "gpu:1", "cpus_per_task": 20, "mem": "64G", "max_time": "12:00:00"},
+ "sbatch": {"partition": "", "qos": "acc_ehpc", "account": "CHANGE_ME", "gres": "gpu:1", "cpus_per_task": 20, "mem": "", "max_time": "12:00:00"},
  "run_root": "/gpfs/scratch/bsc32/${USER}/aimip-runs",
  "trusted_group_parents": ["/gpfs/scratch/bsc32", "/gpfs/projects/bsc32"],
  "extra_ro_binds": [], "gpu_check": "nvidia-smi"}
