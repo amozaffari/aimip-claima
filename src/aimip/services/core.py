@@ -65,8 +65,10 @@ from ..submit import (
     check_safe_path,
     check_trusted_run_dir,
     inspect_local_process,
+    is_trusted_group_parent,
     is_trusted_run_dir,
     sanitized_subprocess_env,
+    trusted_group_parents,
     submit_run,
     write_in_trusted_dir,
 )
@@ -128,8 +130,13 @@ def validate_run_name(name: str) -> str:
 
 
 def _check_existing_ancestry(path: str, *, label: str, field: str) -> None:
-    """Verify existing parent directories of *path* are safe (no foreign symlinks or non-sticky group/world write)."""
+    """Verify existing parent directories of *path* are safe (no foreign symlinks or non-sticky group/world write).
+
+    Same rule as `submit.check_ancestry`, including its MN5 exception: group directories listed in `site.json`
+    `trusted_group_parents` (root-owned, group- but not world-writable) are accepted.
+    """
     euid = os.geteuid()
+    trusted = trusted_group_parents()
     cur = path
     while True:
         parent = os.path.dirname(cur)
@@ -153,6 +160,8 @@ def _check_existing_ancestry(path: str, *, label: str, field: str) -> None:
                 )
             continue
         if (ast.st_mode & (stat.S_IWGRP | stat.S_IWOTH)) and not (ast.st_mode & stat.S_ISVTX):
+            if is_trusted_group_parent(cur, ast, trusted):
+                continue  # MN5 group directory listed in site.json (see submit.trusted_group_parents)
             mode_str = stat.filemode(ast.st_mode)
             raise ValidationError(
                 f"A parent directory is writable by others without sticky bit ({mode_str}): {cur}",
@@ -631,6 +640,7 @@ def _build_slurm_options(spec: RunSpec, site: SiteConfig, *, require_valid_slurm
         mem=str(res["mem"]) if res.get("mem") is not None else None,
         time=str(res["time"]) if res.get("time") is not None else None,
         job_name=str(res["job_name"]) if res.get("job_name") is not None else None,
+        qos=str(res["qos"]) if res.get("qos") is not None else None,
     )
 
 
@@ -755,6 +765,10 @@ def plan(
         "gpu_hours_estimate": est["gpu_hours_estimate"],
         "estimate_basis": est["estimate_basis"],
     }
+    if slurm_opts.qos:
+        # MN5: the QOS is part of what the person approves. Added only when set, so plan digests on sites without
+        # a QOS stay exactly as they were.
+        resources_dict["qos"] = slurm_opts.qos
 
     emu_py = (os.environ.get("AIMIP_EMU_PYTHON") or "").strip() if model_spec.family != "fme" else None
     fme_overlay = (
@@ -824,6 +838,7 @@ def plan(
             "cpus_per_task": resources_dict["cpus_per_task"],
             "mem": resources_dict["mem"],
             "time": resources_dict["time"],
+            **({"qos": resources_dict["qos"]} if "qos" in resources_dict else {}),  # MN5; see above
         },
         "runtime_identity": {
             "runtime": runtime_identity["runtime"],
@@ -2268,7 +2283,13 @@ def doctor(
             "site_config",
             True,
             f"site={site.name} scheduler={site.scheduler} runtime={site.runtime}"
-            + (f" partition={site.partition} account={site.account or '<none>'}" if site.scheduler == "slurm" else ""),
+            + (
+                f" partition={site.partition or '<none>'}"
+                + (f" qos={site.qos}" if site.qos else "")  # MN5: the QOS places the job
+                + f" account={site.account or '<none>'}"
+                if site.scheduler == "slurm"
+                else ""
+            ),
         )
     except AimipError as exc:
         site = SiteConfig(scheduler="none", runtime="native")
@@ -2571,7 +2592,9 @@ def doctor(
             "permissions",
             False,
             exc.message,
-            "Set a private writable `run_root` without world-writable non-sticky parents.",
+            "Set a private writable `run_root` without world-writable non-sticky parents "
+            "(on MN5, list the root-owned group directory, e.g. /gpfs/scratch/<group>, in site.json "
+            "`trusted_group_parents`; see docs/mn5.md).",
         )
     except OSError as exc:
         _add(

@@ -57,6 +57,7 @@ PLAN_FLAGS: tuple[str, ...] = (
     "--playground",
     "--data",
     "--partition",
+    "--qos",
     "--account",
     "--gres",
     "--cpus-per-task",

@@ -67,6 +67,9 @@ ALLOWED_SBATCH_KEYS: frozenset[str] = frozenset(
     {
         "job-name",
         "partition",
+        # MN5 (BSC MareNostrum 5): a job is placed by its QOS (acc_debug, acc_ehpc, ...), not by a partition,
+        # so `job.sbatch` may carry `#SBATCH --qos=` (site.json `sbatch.qos`, or `--qos` on the command line).
+        "qos",
         "account",
         "gres",
         "cpus-per-task",
@@ -115,9 +118,52 @@ def _uid_name(uid: int) -> str:
         return str(uid)
 
 
+# MN5 (BSC MareNostrum 5) exception to the ancestry rule below.
+#
+# The rule: no directory above a run directory may be writable by other users unless it has the sticky bit,
+# because such a user could rename the run directory away and put their own in its place between our checks
+# and the job reading it.
+#
+# MN5's file systems are laid out differently from the clusters this rule was written for: every user directory
+# sits in a root-owned directory of its Unix group that the whole group can write, without a sticky bit
+# (`drwxrws--- root bsc32 /gpfs/scratch/bsc32`, the same for `/gpfs/projects/<group>` and the EuroHPC project
+# groups such as `/gpfs/scratch/ehpc819`). The user's own directory below it is theirs alone
+# (`drwxr-sr-x bsc032013 bsc32 /gpfs/scratch/bsc32/bsc032013`). There is no location with room for model output
+# that passes the rule (the home directory does, but its quota is 80 GB), so on MN5 aimip could not run at all.
+#
+# The exception is opt-in and narrow: `site.json` lists the group directories to accept in
+# `trusted_group_parents`. A listed directory passes only if, at the time of the check, it is owned by root and is
+# writable by its group but not by everyone. Every other directory in the path is checked as before. Accepting it
+# means trusting the members of that Unix group (colleagues of the same department or project) not to swap
+# directories under you; that is the trust MN5 already asks of its users.
+def trusted_group_parents() -> frozenset[str]:
+    """Group directories `site.json` (`trusted_group_parents`) accepts above a run directory (MN5); empty if none."""
+    try:
+        site = load_site_config()
+    except Exception:
+        # No readable site configuration: keep the strict rule.
+        return frozenset()
+    return frozenset(os.path.normpath(p) for p in site.trusted_group_parents)
+
+
+def is_trusted_group_parent(path: str, st: os.stat_result, trusted: frozenset[str]) -> bool:
+    """Whether *path* (already lstat'ed as *st*) is a listed MN5-style group directory: root-owned, group- but not world-writable."""
+    return (
+        os.path.normpath(path) in trusted
+        and stat.S_ISDIR(st.st_mode)
+        and st.st_uid == 0
+        and not (st.st_mode & stat.S_IWOTH)
+    )
+
+
 def check_ancestry(path: str, *, caller_uid: int | None = None) -> None:
-    """Verify no parent directory above *path* allows unprivileged rename/replacement."""
+    """Verify no parent directory above *path* allows unprivileged rename/replacement.
+
+    Directories listed in `site.json` `trusted_group_parents` are exempt when they match the MN5 layout; see
+    `trusted_group_parents` above.
+    """
     euid = os.geteuid() if caller_uid is None else caller_uid
+    trusted = trusted_group_parents()
     cur = path
     while True:
         parent = os.path.dirname(cur)
@@ -142,6 +188,8 @@ def check_ancestry(path: str, *, caller_uid: int | None = None) -> None:
         if (ast.st_mode & (stat.S_IWGRP | stat.S_IWOTH)) and not (
             ast.st_mode & stat.S_ISVTX
         ):
+            if is_trusted_group_parent(cur, ast, trusted):
+                continue  # MN5 group directory listed in site.json (see trusted_group_parents)
             mode_str = stat.filemode(ast.st_mode)
             raise ValidationError(
                 f"a parent directory is writable by others without sticky bit ({mode_str}): {cur}"

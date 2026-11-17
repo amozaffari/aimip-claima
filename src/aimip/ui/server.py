@@ -452,7 +452,7 @@ def _spec_from_payload(body: dict[str, Any]) -> RunSpec:
     raw_res = body.get("resources") or {}
     if not isinstance(raw_res, dict):
         raise ValidationError("Field 'resources' must be an object.", field="resources")
-    allowed_res_keys = {"partition", "account", "gres", "cpus_per_task", "mem", "time", "job_name"}
+    allowed_res_keys = {"partition", "qos", "account", "gres", "cpus_per_task", "mem", "time", "job_name"}  # qos: MN5
     clean_res: dict[str, Any] = {}
     for rk, rv in raw_res.items():
         if rk not in allowed_res_keys:

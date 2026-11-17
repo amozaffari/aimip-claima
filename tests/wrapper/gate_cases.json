@@ -32,6 +32,39 @@
     ]
   },
   {
+    "name": "valid_mn5_qos_without_partition",
+    "accept": true,
+    "lines": [
+      "#!/bin/bash",
+      "# aimip-generated v1",
+      "#SBATCH --job-name=aimip-ace2-era5",
+      "#SBATCH --qos=acc_ehpc",
+      "#SBATCH --account=ehpc819",
+      "#SBATCH --gres=gpu:1",
+      "#SBATCH --cpus-per-task=20",
+      "#SBATCH --hint=nomultithread",
+      "#SBATCH --mem=64G",
+      "#SBATCH --time=02:00:00",
+      "#SBATCH --output={RUN_DIR}/slurm-%j.out",
+      "#SBATCH --error={RUN_DIR}/slurm-%j.err",
+      "",
+      "set -euo pipefail",
+      "\"{PREFIX}/bin/aimip\" exec-fme \"{RUN_DIR}\""
+    ]
+  },
+  {
+    "name": "invalid_qos_value_with_space",
+    "accept": false,
+    "lines": [
+      "#!/bin/bash",
+      "# aimip-generated v1",
+      "#SBATCH --qos=acc ehpc",
+      "",
+      "set -euo pipefail",
+      "\"{PREFIX}/bin/aimip\" exec-fme \"{RUN_DIR}\""
+    ]
+  },
+  {
     "name": "valid_spin_multi_member_exec",
     "accept": true,
     "lines": [

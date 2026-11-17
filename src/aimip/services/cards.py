@@ -37,6 +37,7 @@ ALLOWED_CONFIG_KEYS: frozenset[str] = frozenset(
         "mode",
         "resources",
         "partition",
+        "qos",
         "account",
         "gres",
         "cpus_per_task",
@@ -47,7 +48,8 @@ ALLOWED_CONFIG_KEYS: frozenset[str] = frozenset(
 )
 
 ALLOWED_RESOURCE_KEYS: frozenset[str] = frozenset(
-    {"partition", "account", "gres", "cpus_per_task", "mem", "time", "job_name"}
+    # "qos": MN5 places jobs by QOS (acc_debug, acc_ehpc), not by partition
+    {"partition", "qos", "account", "gres", "cpus_per_task", "mem", "time", "job_name"}
 )
 
 
@@ -251,7 +253,9 @@ def render_plan_card(plan: ResolvedPlan, *, is_tty: bool = False) -> str:
     sched = plan.runtime_identity.get("scheduler", "slurm")
     if sched == "slurm" and plan.spec.mode != "local":
         res_line = (
-            f"slurm partition={res.get('partition')} account={res.get('account') or '<none>'} "
+            f"slurm partition={res.get('partition') or '<none>'}"
+            + (f" qos={res.get('qos')}" if res.get("qos") else "")
+            + f" account={res.get('account') or '<none>'} "
             f"gres={res.get('gres') or '<none>'} wall={res.get('time')} "
             f"(~{res.get('gpu_hours_estimate', 0):.3f} GPU-h; basis: {basis})"
         )

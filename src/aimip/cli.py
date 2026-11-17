@@ -82,6 +82,14 @@ def _add_slurm_args(parser: argparse.ArgumentParser) -> None:
         help="SLURM partition override (defaults to site.json sbatch.partition).",
     )
     slurm_grp.add_argument(
+        "--qos",
+        default=None,
+        help=(
+            "SLURM QOS override (defaults to site.json sbatch.qos; 'none' omits --qos). On MN5 the QOS places the "
+            "job: acc_ehpc (up to 3 days) or acc_debug (up to 2 h, one job at a time)."
+        ),
+    )
+    slurm_grp.add_argument(
         "--account",
         default=None,
         help="SLURM account override (defaults to site.json sbatch.account; '' or 'none' omits --account).",
@@ -253,6 +261,7 @@ def _spec_from_cli_args(args: argparse.Namespace) -> Any:
         "mode": cli_mode,
         "resources": {
             "partition": args.partition,
+            "qos": args.qos,
             "account": args.account,
             "gres": args.gres,
             "cpus_per_task": args.cpus_per_task,
@@ -397,6 +406,7 @@ def _build_slurm_and_site(args: argparse.Namespace) -> tuple[Any, Any]:
     slurm_opts = SlurmOptions.from_site(
         site_cfg,
         partition=args.partition,
+        qos=args.qos,
         account=args.account,
         gres=args.gres,
         cpus_per_task=args.cpus_per_task,
@@ -1206,6 +1216,8 @@ def _cmd_site_init(args: argparse.Namespace) -> int:
         max_time=args.max_time,
         run_root=args.run_root,
         overwrite=args.overwrite,
+        qos=args.qos,
+        trusted_group_parents=args.trusted_group_parents,
     )
     payload = {"path": target_path, "site": cfg.to_dict()}
     if args.json:
@@ -1217,7 +1229,9 @@ def _cmd_site_init(args: argparse.Namespace) -> int:
     )
     if cfg.scheduler == "slurm":
         print(
-            f"SLURM defaults: partition={cfg.partition} account={cfg.account or '<none>'} "
+            f"SLURM defaults: partition={cfg.partition or '<none>'}"
+            + (f" qos={cfg.qos}" if cfg.qos else "")
+            + f" account={cfg.account or '<none>'} "
             f"gres={cfg.gres or '<none>'} cpus={cfg.cpus_per_task} mem={cfg.mem} max_time={cfg.max_time}"
         )
     print(f"Run root:       {cfg.run_root}")
@@ -1242,7 +1256,9 @@ def _cmd_site_show(args: argparse.Namespace) -> int:
     print(f"Runtime:        {cfg.runtime}")
     if cfg.scheduler == "slurm":
         print(
-            f"SLURM defaults: partition={cfg.partition} account={cfg.account or '<none>'} "
+            f"SLURM defaults: partition={cfg.partition or '<none>'}"
+            + (f" qos={cfg.qos}" if cfg.qos else "")
+            + f" account={cfg.account or '<none>'} "
             f"gres={cfg.gres or '<none>'} cpus={cfg.cpus_per_task} mem={cfg.mem} max_time={cfg.max_time}"
         )
     print(f"Run root:       {cfg.run_root}")
@@ -1774,11 +1790,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_site_init = site_sub.add_parser(
         "init",
-        help="Write $AIMIP_HOME/site.json from a preset (levante, generic-slurm, local) and overrides.",
+        help="Write $AIMIP_HOME/site.json from a preset (levante, generic-slurm, mn5, local) and overrides.",
     )
     p_site_init.add_argument(
         "--preset",
-        choices=("levante", "generic-slurm", "local"),
+        choices=("levante", "generic-slurm", "mn5", "local"),
         default="levante",
         help="Site preset (default: levante).",
     )
@@ -1799,7 +1815,22 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Override runtime (container runtime or native).",
     )
-    p_site_init.add_argument("--partition", default=None, help="Override SLURM partition.")
+    p_site_init.add_argument(
+        "--partition", default=None, help="Override SLURM partition ('none' omits it; needs --qos then)."
+    )
+    p_site_init.add_argument(
+        "--qos", default=None, help="SLURM QOS written into every job script (MN5: acc_ehpc or acc_debug)."
+    )
+    p_site_init.add_argument(
+        "--trusted-group-parent",
+        dest="trusted_group_parents",
+        action="append",
+        default=None,
+        help=(
+            "Root-owned group directory (drwxrws---) accepted above run directories, e.g. /gpfs/scratch/bsc32 "
+            "on MN5; repeatable. See docs/mn5.md."
+        ),
+    )
     p_site_init.add_argument(
         "--account", default=None, help="Override SLURM account ('' or 'none' omits --account)."
     )

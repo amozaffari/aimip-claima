@@ -142,6 +142,8 @@ class SlurmOptions:
     time: str | None = None
     job_name: str | None = None
     scheduler: str = "slurm"
+    # MN5 (BSC MareNostrum 5): the QOS (acc_debug, acc_ehpc, ...) places the job; empty means no `--qos` line.
+    qos: str = ""
 
     def validate(self) -> SlurmOptions:
         """Validate all fields against shell and SLURM token allowlists."""
@@ -150,14 +152,22 @@ class SlurmOptions:
                 f"Invalid scheduler {self.scheduler!r}: expected 'slurm' or 'none'."
             )
         if self.scheduler == "slurm":
-            if not self.partition:
-                raise ConfigError("SLURM --partition must be non-empty when scheduler='slurm'.")
-            if self.partition == "CHANGE_ME":
+            # A partition is required unless a QOS is given (MN5: the QOS selects the partition, so the job script
+            # carries `--qos` and no `--partition`).
+            if not self.partition and not self.qos:
                 raise ConfigError(
-                    "SLURM --partition is set to 'CHANGE_ME' in site.json; "
-                    "pass --partition <name> or run `aimip site init`."
+                    "SLURM --partition must be non-empty when scheduler='slurm' "
+                    "(or give --qos, as on MN5)."
                 )
-            validate_slurm_token(self.partition, "SLURM --partition")
+            if self.partition:
+                if self.partition == "CHANGE_ME":
+                    raise ConfigError(
+                        "SLURM --partition is set to 'CHANGE_ME' in site.json; "
+                        "pass --partition <name> or run `aimip site init`."
+                    )
+                validate_slurm_token(self.partition, "SLURM --partition")
+            if self.qos:
+                validate_slurm_token(self.qos, "SLURM --qos")
 
             if self.account:
                 if self.account == "CHANGE_ME":
@@ -193,8 +203,15 @@ class SlurmOptions:
         mem: str | None = None,
         time: str | None = None,
         job_name: str | None = None,
+        qos: str | None = None,
     ) -> SlurmOptions:
         """Merge CLI SLURM overrides over a loaded `SiteConfig`."""
+        eff_partition = site.partition
+        if partition is not None:
+            eff_partition = "" if partition.strip().lower() == "none" else partition
+        eff_qos = site.qos
+        if qos is not None:
+            eff_qos = "" if qos.strip().lower() == "none" else qos.strip()
         eff_account = site.account
         if account is not None:
             eff_account = "" if account.strip().lower() == "none" else account.strip()
@@ -202,7 +219,7 @@ class SlurmOptions:
         if gres is not None:
             eff_gres = "" if gres.strip().lower() == "none" else gres.strip()
         return cls(
-            partition=partition if partition is not None else site.partition,
+            partition=eff_partition,
             account=eff_account,
             gres=eff_gres,
             cpus_per_task=(
@@ -212,6 +229,7 @@ class SlurmOptions:
             time=time,
             job_name=job_name,
             scheduler=site.scheduler,
+            qos=eff_qos,
         ).validate()
 
 
@@ -600,7 +618,11 @@ def render_sbatch_script(
     ]
     if opts.scheduler == "slurm":
         lines.append(f"#SBATCH --job-name={job_name}")
-        lines.append(f"#SBATCH --partition={opts.partition}")
+        if opts.partition:
+            lines.append(f"#SBATCH --partition={opts.partition}")
+        if opts.qos:
+            # MN5: the QOS selects the partition (acc_ehpc, acc_debug, ...); there may be no partition line
+            lines.append(f"#SBATCH --qos={opts.qos}")
         if opts.account:
             lines.append(f"#SBATCH --account={opts.account}")
         if opts.gres:
@@ -2013,6 +2035,7 @@ def prepare_run(
             "time": effective_slurm.time or default_walltime,
             "unclamped_estimated_time": unclamped_walltime,
             "walltime_capped": walltime_capped,
+            **({"qos": effective_slurm.qos} if effective_slurm.qos else {}),  # MN5; only when set
         },
         "slurm_job_id": slurm_job_id,
         "image_sha": _sanitize_env_string(os.environ.get("AIMIP_IMAGE_SHA")),

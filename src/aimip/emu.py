@@ -528,6 +528,7 @@ def prepare_emu_run(
             "cpus_per_task": effective_slurm.cpus_per_task, "mem": effective_slurm.mem,
             "time": effective_slurm.time or default_walltime, "unclamped_estimated_time": unclamped,
             "walltime_capped": walltime_capped,
+            **({"qos": effective_slurm.qos} if effective_slurm.qos else {}),  # MN5; only when set
         },
         "slurm_job_id": None,
         "image_sha": (os.environ.get("AIMIP_IMAGE_SHA") or "")[:256],
