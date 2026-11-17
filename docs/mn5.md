@@ -74,9 +74,20 @@ For another group, edit `run_root` and `trusted_group_parents` in `<prefix>/site
 
 - Download models on `alogin4` before submitting (`aimip fetch -m ace2-era5`); jobs cannot download.
 - `aimip run … --qos acc_debug --time 00:30:00` for short tests (one job at a time), the default `acc_ehpc` otherwise.
-- The node is billed whole whatever share of it a job uses.
+- The first job recorded `billing=40` (its 40 CPUs), not a whole node; check your project's accounting rules.
 
-## Still to check on the first MN5 job
+## First MN5 job (2026-11-17)
 
-- Whether a one-GPU request with 20 cores is accepted, or MN5 wants whole nodes (`--gres=gpu:4`, 80 cores).
+`aimip run ace2-era5 --start 1979-01-01T00:00:00 --steps 8 --name mn5-check --qos acc_debug --time 00:30:00 --submit`
+then `aimip submit`: job 49144909 completed (exit 0) in 7 min 11 s on one H100 (`cuda:0`), with all outputs written.
+
+- MN5 accepted one GPU with 20 cores (`--hint=nomultithread`, no `--mem`) on partition `acc`. Slurm gave it 40 CPUs
+  (20 cores, 2 threads each) and 125 000 MB of memory, and recorded `billing=40`, not a whole node.
+- The forward pass took 266 s for 8 steps (33 s per step), which is very slow for ACE2 on an H100. With so few steps
+  this may be one-time start-up cost on the first step; a longer run (for example one month, 124 steps) will show
+  the steady speed.
+
+## Still to check
+
+- The steady per-step speed of ACE2 on MN5 (see above).
 - `--with-emu` (DLESyM, ArchesClimate-SSP) compiles a CUDA kernel, which needs a batch job; it is not installed yet.
